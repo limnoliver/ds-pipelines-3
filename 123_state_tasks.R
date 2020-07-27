@@ -43,7 +43,8 @@ do_state_tasks <- function(oldest_active_sites, ...) {
   task_plan <- create_task_plan(
     task_names = task_name,
     task_steps = list(download_step, plot_step, tally_step),
-    add_complete = FALSE)
+    add_complete = FALSE,
+    final_steps = c('tally', 'plot'))
 
   # Create the task remakefile
   create_task_makefile(
@@ -53,14 +54,22 @@ do_state_tasks <- function(oldest_active_sites, ...) {
     include = 'remake.yml',
     sources = c(...),
     packages = c('dplyr', 'dataRetrieval', 'lubridate'),
-    tickquote_combinee_objects = FALSE,
-    finalize_funs = c())
+    tickquote_combinee_objects = TRUE,
+    finalize_funs = c('combine_obs_tallies', 'summarize_timeseries_plots'),
+    final_targets = c('obs_tallies', '3_visualize/out/timeseries_plots.yml'),
+    as_promises = TRUE)
 
   # Build the tasks
-  scmake('123_state_tasks', remake_file='123_state_tasks.yml')
+  obs_tallies <- scmake('obs_tallies_promise', remake_file='123_state_tasks.yml')
+  scmake('timeseries_plots.yml_promise', remake_file='123_state_tasks.yml')
 
-  # Return nothing to the parent remake file
-  return()
+  timeseries_plots_info <- yaml::yaml.load_file('3_visualize/out/timeseries_plots.yml') %>%
+    tibble::enframe(name = 'filename', value = 'hash') %>%
+    mutate(hash = purrr::map_chr(hash, `[[`, 1))
+
+  # Return combined obs_tallies
+  # Return the combiner targets to the parent remake file
+  return(list(obs_tallies=obs_tallies, timeseries_plots_info=timeseries_plots_info))
 }
 
 split_inventory <- function(summary_file = '1_fetch/tmp/state_splits.yml', sites_info=oldest_active_sites) {
@@ -79,4 +88,21 @@ split_inventory <- function(summary_file = '1_fetch/tmp/state_splits.yml', sites
 
   # write summary file
   scipiper::sc_indicate(ind_file = summary_file, data_file = split_filenames_a)
+}
+
+combine_obs_tallies <- function(...) {
+  # filter to just those arguments that are tibbles (because the only step
+  # outputs that are tibbles are the tallies)
+  dots <- list(...)
+  tally_dots <- dots[purrr::map_lgl(dots, is_tibble)]
+  out <- bind_rows(tally_dots)
+  return(out)
+}
+
+summarize_timeseries_plots <- function(ind_file, ...) {
+  # filter to just those arguments that are character strings (because the only
+  # step outputs that are characters are the plot filenames)
+  dots <- list(...)
+  plot_dots <- dots[purrr::map_lgl(dots, is.character)]
+  do.call(combine_to_ind, c(list(ind_file), plot_dots))
 }
