@@ -60,6 +60,7 @@ do_state_tasks <- function(oldest_active_sites, ...) {
     as_promises = TRUE)
 
   # Build the tasks
+  loop_tasks(task_plan, '123_state_tasks.yml', num_tries = 100)
   obs_tallies <- scmake('obs_tallies_promise', remake_file='123_state_tasks.yml')
   scmake('timeseries_plots.yml_promise', remake_file='123_state_tasks.yml')
 
